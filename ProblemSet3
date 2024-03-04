@@ -6,223 +6,242 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 public class PS3 {
-
+	
 	public static ArrayList<ArrayList<Double>> xTrain = new ArrayList<>();
-    public static ArrayList<Double> yTrain = new ArrayList<>();
-    public static ArrayList<ArrayList<Double>> xTest = new ArrayList<>();
-    public static ArrayList<Double> yTest = new ArrayList<>();
-    public static final int TRAIN_SIZE = 48;
+	public static ArrayList<Double> yTrain = new ArrayList<>();
+	public static ArrayList<ArrayList<Double>> xTest = new ArrayList<>();
+	public static ArrayList<ArrayList<Double>> xTest_unnormalized = new ArrayList<>();
+	public static ArrayList<Double> yTest = new ArrayList<>();
+	public static ArrayList<Double> yTest_unnormalized = new ArrayList<>();
+	public static final int TRAIN_SIZE = 48;
+	public static String inputFile;
 
 	public static void main(String[] args) throws IOException {
-		String inputFile = args[0];
-        int targetIndex = Integer.parseInt(args[1]);
+		inputFile = args[0];
+		int targetIndex = Integer.parseInt(args[1]);
 //        String outputFile = args[2];
 //        double learningRate = Double.parseDouble(args[3]);
 //        double epsilon = Double.parseDouble(args[4]);
-        
-        double learningRate = 0.00001;
-        double epsilon = 0.0001;
+
+		double learningRate = 0.4;
+		double epsilon = 0.09;
+
+		readFile_Normalize(inputFile, targetIndex);
+		double[] weights = batchGradientDescent(xTrain, yTrain, learningRate, epsilon);
+		System.out.println("Resulting Weights:");
+		for (int i = 0; i < weights.length; i++) {
+			System.out.println("W" + i + ":    " + weights[i]);
+		}
+
+		System.out.println("\nTesting Phase:");
+		System.out.println("--------------------------------------------------------------");	
 		
-        readFile_Normalize(inputFile, targetIndex);
+		double totalLoss = 0.0;
+		for (int i = 0; i < xTest_unnormalized.size(); i++) {
+			ArrayList<Double> testRecord = xTest_unnormalized.get(i);
+			double trueValue = yTest_unnormalized.get(i);
+			double prediction = predict(testRecord, weights);
+			double error = Math.abs(trueValue - prediction);
+			totalLoss += Math.pow(error, 2);
 
-        double[] weights = batchGradientDescent(xTrain, yTrain, learningRate, epsilon);
+			System.out.printf("Test Record %2d: True: %7.2f  Prediction: %7.2f  Error: %7.2f%n", (i + 1), trueValue,
+					prediction, error);
 
-        System.out.println("Testing Phase:");
-        double totalLoss = 0.0;
-        for (int i = 0; i < xTest.size(); i++) {
-            ArrayList<Double> testRecord = xTest.get(i);
-            double trueValue = yTest.get(i);
-            double prediction = predict(testRecord, weights);
-            double error = Math.abs(trueValue - prediction);
-            totalLoss += Math.pow(error, 2);
+		}
 
-            System.out.println("Test Record " + (i + 1) + ": True Value: " + trueValue +
-                               " Prediction: " + prediction + " Error: " + error);
-        }
+		double loss = totalLoss / xTest.size();
+		System.out.println("\nLoss of Testing Data: " + loss);
+		System.out.println("=> Number of Test Entries (n):\t" + xTest.size());
 
-        double loss = totalLoss / xTest.size();
-        System.out.println("Loss of Testing Data: " + loss);
-		
 	}
-	
-    private static double calculateLoss(ArrayList<ArrayList<Double>> X, ArrayList<Double> y, double[] w) {
-        int n = X.size(); 
-        double totalLoss = 0.0;
 
-        for (int j = 0; j < n; j++) {
-            double hw = predict(X.get(j), w); 
-            double diff = y.get(j) - hw;
-            totalLoss += Math.pow(diff, 2);
-        }
+	private static double calculateLoss(ArrayList<ArrayList<Double>> X, ArrayList<Double> y, double[] w) {
+		int n = X.size();
+		double totalLoss = 0.0;
 
-        return totalLoss / (2 * n); 
-    }
+		for (int j = 0; j < n; j++) {
+			double hw = predict(X.get(j), w);
+			double diff = y.get(j) - hw;
+			totalLoss += Math.pow(diff, 2);
+		}
 
-    private static double[] computeGradient(ArrayList<ArrayList<Double>> X, ArrayList<Double> y, double[] w) {
-        int n = X.size(); 
-        int p = X.get(0).size();
-        double[] gradient = new double[p];
+		return totalLoss / (2 * n);
+	}
 
-        for (int j = 0; j < n; j++) {
-            double hw = predict(X.get(j), w); 
-            double diff = y.get(j) - hw;
+	private static double[] computeGradient(ArrayList<ArrayList<Double>> X, ArrayList<Double> y, double[] w) {
+		int n = X.size();
+		int p = X.get(0).size();
+		double[] gradient = new double[p];
 
-            for (int k = 0; k < p; k++) {
-                gradient[k] += diff * X.get(j).get(k);
-            }
-        }
+		for (int j = 0; j < n; j++) {
+			double hw = predict(X.get(j), w);
+			double diff = y.get(j) - hw;
 
+			for (int k = 0; k < p; k++) {
+				gradient[k] += diff * X.get(j).get(k);
+			}
+		}
 
-        for (int k = 0; k < p; k++) {
-            gradient[k] /= n;
-        }
+		for (int k = 0; k < p; k++) {
+			gradient[k] /= -n;
+		}
 
-        return gradient;
-    }
+		return gradient;
+	}
 
-    private static boolean isConverged(double prevLoss, double currentLoss, double epsilon) {
-        double loss = Math.abs(prevLoss - currentLoss) * 100 / prevLoss;
-        return loss < epsilon;
-    }
+	private static boolean isConverged(double prevLoss, double currentLoss, double epsilon) {
+		double loss = Math.abs(prevLoss - currentLoss) * 100 / prevLoss;
+		return loss < epsilon;
+	}
 
-    public static double[] batchGradientDescent(ArrayList<ArrayList<Double>> X, ArrayList<Double> y, double alpha, double epsilon) {
-        int p = X.get(0).size();
-        double[] w = initializeWeights(p); 
-        double prevLoss = Double.MAX_VALUE;
-        double currentLoss = Double.MAX_VALUE;
-        int i = 0;
-        
-        while (isConverged(prevLoss, currentLoss, epsilon) && i < 10) { 
-            currentLoss = calculateLoss(X, y, w);
-            System.out.println("Epoch " + (i + 1) + ": Loss of " + currentLoss);
+	public static double[] batchGradientDescent(ArrayList<ArrayList<Double>> X, ArrayList<Double> y, double alpha,
+			double epsilon) {
+		int p = X.get(0).size();
+		System.out.println("\nStarting Gradient Descent:");
+		System.out.println("--------------------------------------------------------------\n");
 
-            double[] gradient = computeGradient(X, y, w); 
-            for (int k = 0; k < p; k++) {
-                w[k] -= alpha * gradient[k]; 
-            }
+		double[] w = initializeWeights(p);
+		double prevLoss = 0;
+		double currentLoss = calculateLoss(X, y, w);
+		int epochs = 0;
+		int i = 0;
+		while (!isConverged(prevLoss, currentLoss, epsilon)) {
+			System.out.printf("Epoch %d: Loss of %.2f Delta = %.2f%% Epsilon = %.2f%%\n", (i + 1), currentLoss,
+					Math.abs((currentLoss - prevLoss) / prevLoss) * 100, epsilon);
+			double[] gradient = computeGradient(X, y, w);
+			for (int k = 0; k < p; k++) {
+				w[k] -= alpha * gradient[k];
+			}
+			i++;
+			epochs++;
+			prevLoss = currentLoss;
+			currentLoss = calculateLoss(X, y, w);
 
-            prevLoss = currentLoss;
-            i++;
-        }
+		}
+		System.out.println("\nEpochs Required:  " + epochs + "\n");
+		return w;
+	}
 
-        return w;
-    }
+	private static double[] initializeWeights(int p) {
+		double[] weights = new double[p];
+		Arrays.fill(weights, 0.0);
+		return weights;
+	}
 
-    private static double[] initializeWeights(int p) {
-        double[] weights = new double[p];
-        Arrays.fill(weights, 0.0);
-        return weights;
-    }
+	private static double predict(ArrayList<Double> x, double[] w) {
+		double hw = 0.0;
+		for (int i = 0; i < w.length; i++) {
+			hw += w[i] * x.get(i);
+		}
+		return hw;
+	}
 
-    private static double predict(ArrayList<Double> x, double[] w) {
-        double hw = 0.0;
-        for (int i = 0; i < w.length; i++) {
-            hw += w[i] * x.get(i);
-        }
-        return hw;
-    }
-	
-	
-	
-	
-	
 	// Mean, std, and normalization for Y values
 	public static double stdY(ArrayList<Double> data, double mean) {
 		double sum = 0;
-		for(double x : data) {
-			sum += Math.pow(x-mean, 2);
+		for (double x : data) {
+			sum += Math.pow(x - mean, 2);
 		}
-		
+
 		return Math.sqrt(sum / data.size());
 	}
-	
+
 	public static double meanY(ArrayList<Double> data) {
 		double sum = 0;
-		for(double x : data) {
+		for (double x : data) {
 			sum += x;
 		}
-		
+
 		return sum / data.size();
 	}
-	
+
 	public static void normalizeY(ArrayList<Double> data) {
-	    double mean = meanY(data);
-	    double std = stdY(data, mean);
-	    
-	    for (int i = 0; i < data.size(); i++) {
-	        double x = data.get(i);
-	        double zScore = (x - mean) / std;
-	        data.set(i, zScore);
-	    }
+		double mean = meanY(data);
+		double std = stdY(data, mean);
+
+		for (int i = 0; i < data.size(); i++) {
+			double x = data.get(i);
+			double zScore = (x - mean) / std;
+			data.set(i, zScore);
+		}
 	}
 
-	
 	// Mean, std, and normalization for X values
 	public static double meanX(ArrayList<ArrayList<Double>> data, int columnIndex) {
-	    double sum = 0;
-	    for (ArrayList<Double> row : data) {
-	        sum += row.get(columnIndex);
-	    }
-	    return sum / data.size();
+		double sum = 0;
+		for (ArrayList<Double> row : data) {
+			sum += row.get(columnIndex);
+		}
+		return sum / data.size();
 	}
 
 	public static double stdX(ArrayList<ArrayList<Double>> data, double mean, int columnIndex) {
-	    double sumSquaredDiff = 0;
-	    for (ArrayList<Double> row : data) {
-	        double value = row.get(columnIndex);
-	        sumSquaredDiff += Math.pow(value - mean, 2);
-	    }
-	    
-	    return Math.sqrt(sumSquaredDiff / (data.size()));
+		double sumSquaredDiff = 0;
+		for (ArrayList<Double> row : data) {
+			double value = row.get(columnIndex);
+			sumSquaredDiff += Math.pow(value - mean, 2);
+		}
+
+		return Math.sqrt(sumSquaredDiff / (data.size()));
 	}
-	
+
 	public static void normalizeX(ArrayList<ArrayList<Double>> data, int columnIndex) {
-		
+
 		double mean = meanX(data, columnIndex);
 		double std = stdX(data, mean, columnIndex);
-		
-		for(ArrayList<Double> x : data) {
+
+		for (ArrayList<Double> x : data) {
 			double value = x.get(columnIndex);
 			double zScore = (value - mean) / std;
 			x.set(columnIndex, zScore);
 		}
-		
-		
-		
+
 	}
 
-	
-
 	public static void readFile_Normalize(String input_file, int targetIndex) throws IOException {
-	    BufferedReader br = new BufferedReader(new FileReader(input_file, StandardCharsets.UTF_8));
-	    String line;
-	    br.skip(1);
-	    
-	    while ((line = br.readLine()) != null) {
-	        String[] split = line.split(",");
-	        ArrayList<Double> row = new ArrayList<>();
-	        row.add(1.0);
-	        for (int i = 0; i < 15; i++) {
-	            row.add(Double.parseDouble(split[i]));
-	        }
-	        if (xTrain.size() < TRAIN_SIZE) {
-	            xTrain.add(row);
-	            yTrain.add(Double.parseDouble(split[targetIndex]));
-	        } else {
-	            xTest.add(row);
-	            yTest.add(Double.parseDouble(split[targetIndex]));
-	        }
-	    }
-	    br.close();
-	    
-	    for (int i = 1; i <= 15; i++) {
-	        normalizeX(xTrain, i);
-	        normalizeX(xTest, i);
-	    }
-	    
-	    normalizeY(yTrain);
-	    normalizeY(yTest);
-	    
+		BufferedReader br = new BufferedReader(new FileReader(input_file, StandardCharsets.UTF_8));
+		String line;
+		br.skip(1);
+
+		int totalEntries = 0;
+		int totalFeatures = 0;
+
+		while ((line = br.readLine()) != null) {
+			String[] split = line.split(",");
+			ArrayList<Double> row = new ArrayList<>();
+			row.add(1.0);
+			for (int i = 0; i < targetIndex; i++) {
+				row.add(Double.parseDouble(split[i]));
+				if (i != targetIndex - 1) {
+					totalEntries++;
+				}
+			}
+			if (xTrain.size() < TRAIN_SIZE) {
+				xTrain.add(row);
+				yTrain.add(Double.parseDouble(split[targetIndex]));
+			} else {
+				xTest.add(row);
+				yTest.add(Double.parseDouble(split[targetIndex]));
+				xTest_unnormalized.add(new ArrayList<>(row));
+				yTest_unnormalized.add(Double.parseDouble(split[targetIndex]));
+			}
+			totalFeatures = row.size() - 1;
+		}
+		br.close();
+
+		System.out.println("Training Phase:  " + inputFile);
+		System.out.println("--------------------------------------------------------------");
+		System.out.println("=> Number of Entries (n): " + totalEntries);
+		System.out.println("=> Number of Features (p): " + totalFeatures);
+
+		for (int i = 1; i <= 15; i++) {
+			normalizeX(xTrain, i);
+			normalizeX(xTest, i);
+		}
+
+		normalizeY(yTrain);		
+		normalizeY(yTest);
+
 	}
 
 }
